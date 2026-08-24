@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>本地会话管理工具</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="surface hero">
+        <div>
+          <h1>本地会话管理工具</h1>
+          <p>
+            数据仅在浏览器本地处理, 不会发送到任何第三方或后端
+            <span id="codex-delete-hint" class="delete-hint" hidden>
+              · 删除 Codex 会话前请先退出 Codex
+            </span>
+          </p>
+          <p id="support-hint" class="support-hint"></p>
+        </div>
+        <div class="hero-actions">
+          <nav class="project-links" aria-label="项目链接">
+            <a class="project-link home-link" href="https://www.kafuucoori.top/">回到主页</a>
+            <a
+              class="project-link github-link"
+              href="https://github.com/kafuucoori/AI_Session_Manager"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="打开 GitHub 项目"
+              title="GitHub 项目"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 .7a11.5 11.5 0 0 0-3.64 22.41c.58.11.79-.25.79-.56v-2.23c-3.22.7-3.9-1.37-3.9-1.37-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.71.08-.71 1.16.08 1.78 1.2 1.78 1.2 1.03 1.77 2.71 1.26 3.37.96.1-.75.4-1.26.73-1.55-2.57-.29-5.27-1.29-5.27-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.47.11-3.05 0 0 .97-.31 3.16 1.18A10.98 10.98 0 0 1 12 6.11c.98 0 1.95.13 2.86.39 2.2-1.49 3.16-1.18 3.16-1.18.63 1.58.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.41-2.71 5.4-5.29 5.69.42.36.79 1.07.79 2.16v3.24c0 .31.21.68.8.56A11.5 11.5 0 0 0 12 .7Z" />
+              </svg>
+            </a>
+          </nav>
+          <div class="source-switch" role="group" aria-label="来源">
+            <button id="src-claude" class="is-active" type="button">Claude</button>
+            <button id="src-codex" type="button">Codex</button>
+          </div>
+        </div>
+      </header>
+
+      <section class="surface statusbar">
+        <div class="status-left">
+          <span id="status-badge" class="badge">未连接</span>
+          <p id="status-text" class="status-text">未选择目录</p>
+        </div>
+        <div class="stat-strip">
+          <span>目录<b id="status-dir">-</b></span>
+          <span>总数<b id="m-total">-</b></span>
+          <span>项目<b id="m-group">-</b></span>
+          <span>筛选<b id="m-filtered">-</b></span>
+          <span>大小<b id="m-size">-</b></span>
+          <span>已选<b id="m-selected">0</b></span>
+          <span>扫描<b id="status-scanned">-</b></span>
+        </div>
+        <span class="spacer"></span>
+        <div class="btn-row">
+          <button id="pick-btn" class="primary" type="button">选择目录</button>
+          <button id="reload-btn" class="secondary" type="button" disabled>
+            重新扫描
+          </button>
+          <button id="delete-selected-btn" class="danger" type="button" disabled hidden>
+            删除选中
+          </button>
+          <button id="delete-all-btn" class="danger" type="button" disabled>
+            删除全部
+          </button>
+        </div>
+      </section>
+
+      <main class="workspace">
+        <div class="left-col">
+          <section class="surface detail-card">
+            <div class="section-head">
+              <div>
+                <h2>详情</h2>
+              </div>
+              <div class="head-actions">
+                <button id="download-btn" class="secondary small" type="button" disabled>
+                  导出 MD
+                </button>
+                <button id="delete-current-btn" class="danger small" type="button" disabled>
+                  删除
+                </button>
+              </div>
+            </div>
+            <dl id="detail-overview" class="detail-overview"></dl>
+          </section>
+
+          <section class="surface list-card">
+            <div class="section-head">
+              <div>
+                <h2>会话列表</h2>
+              </div>
+              <p id="list-caption" class="caption">未扫描</p>
+            </div>
+            <div class="filter-bar">
+              <label class="field span-2">
+                项目
+                <select id="project-filter">
+                  <option value="all">全部项目</option>
+                </select>
+              </label>
+              <label class="field">
+                时间
+                <select id="age-filter">
+                  <option value="all">全部</option>
+                  <option value="7d">近 7 天</option>
+                  <option value="30d">近 30 天</option>
+                  <option value="older">30 天前</option>
+                </select>
+              </label>
+              <label class="field">
+                排序
+                <select id="sort-select">
+                  <option value="updated-desc">最近更新</option>
+                  <option value="size-desc">文件大小</option>
+                  <option value="title-asc">标题 A-Z</option>
+                </select>
+              </label>
+            </div>
+            <div id="session-list" class="list-scroll">
+              <p class="empty-state">未扫描</p>
+            </div>
+          </section>
+        </div>
+
+        <section class="surface conversation-card">
+          <div class="conversation-head">
+            <h3>完整对话</h3>
+            <span id="msg-count" class="badge">0</span>
+            <div id="conv-filter" class="chip-row"></div>
+          </div>
+          <div id="conversation" class="conversation-stream">
+            <p class="empty-state">未选择会话</p>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="modal" class="modal" hidden>
+      <div id="modal-backdrop" class="modal-backdrop"></div>
+      <div class="modal-card" role="dialog" aria-modal="true">
+        <h2 id="modal-title">确认删除</h2>
+        <p id="modal-desc" class="modal-desc"></p>
+        <div id="modal-warning" class="modal-warning"></div>
+        <div class="modal-actions">
+          <button id="modal-cancel" class="secondary" type="button">取消</button>
+          <button id="modal-confirm" class="danger solid" type="button">确认删除</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="core.js"></script>
+    <script src="storage.js"></script>
+    <script src="claude.js"></script>
+    <script src="codex.js"></script>
+    <script src="sql-asm.js"></script>
+    <script src="codex-sqlite.js"></script>
+    <script src="delete.js"></script>
+    <script src="script.js"></script>
+  </body>
+</html>
