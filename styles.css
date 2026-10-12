@@ -137,14 +137,24 @@ button {
 }
 
 .github-link {
-  width: 38px;
-  padding: 0;
+  flex: 0 0 auto;
+  width: max-content;
+  min-width: max-content;
+  gap: 7px;
+  padding: 0 12px;
 }
 
 .github-link svg {
+  flex: none;
   width: 19px;
   height: 19px;
   fill: currentColor;
+}
+
+.version-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .source-switch {
