@@ -11,7 +11,7 @@ async function readCodexIndexes(rootHandle) {
 
 async function readCodexStateIndex(database) {
   const SQL = await loadCodexSql();
-  const bytes = await readFileBytes(database.handle);
+  const { bytes } = await readCodexDatabaseSnapshot(database);
   const db = new SQL.Database(bytes);
   try {
     const rows = queryCodexRows(db,
@@ -26,7 +26,7 @@ async function readCodexStateIndex(database) {
 async function readCodexCatalogIndex(database) {
   if (!database) return new Map();
   const SQL = await loadCodexSql();
-  const bytes = await readFileBytes(database.handle);
+  const { bytes } = await readCodexDatabaseSnapshot(database);
   const db = new SQL.Database(bytes);
   try {
     const rows = queryCodexRows(db,
@@ -69,14 +69,12 @@ async function deleteCodexThreads(targets) {
     const threadIds = collectCodexThreadTree(stateDb, requestedIds);
     const rolloutPaths = readCodexRolloutPaths(stateDb, threadIds);
     const nextState = deleteCodexStateRows(stateDb, threadIds);
-    const nextHistory = historyDb ? deleteCodexHistoryRows(historyDb, threadIds) : null;
-    const nextCatalog = catalogDb ? deleteCodexCatalogRows(catalogDb, threadIds) : null;
+    const nextHistory = historyDb ? deleteCodexRowsByThreadId(historyDb, threadIds) : null;
+    const nextCatalog = catalogDb ? deleteCodexRowsByThreadId(catalogDb, threadIds) : null;
     const nextHistorySnapshots = historySnapshotsDb
-      ? deleteCodexRowsByThreadId(historySnapshotsDb, ["app_server_history_snapshots"], threadIds)
-      : null;
+      ? deleteCodexRowsByThreadId(historySnapshotsDb, threadIds) : null;
     const nextSummaries = summariesDb
-      ? deleteCodexRowsByThreadId(summariesDb, ["thread_turn_summaries"], threadIds)
-      : null;
+      ? deleteCodexRowsByThreadId(summariesDb, threadIds) : null;
 
     const updates = buildCodexDatabaseUpdates(databaseFiles, snapshots, {
       state: nextState,
@@ -331,7 +329,9 @@ function deleteCodexStateRows(db, threadIds) {
   db.run("PRAGMA foreign_keys = ON");
   db.run("BEGIN IMMEDIATE");
   try {
-    db.run(`DELETE FROM thread_dynamic_tools WHERE thread_id IN (${placeholders})`, threadIds);
+    for (const table of codexThreadIdTables(db)) {
+      db.run(`DELETE FROM ${quoteCodexIdentifier(table)} WHERE thread_id IN (${placeholders})`, threadIds);
+    }
     db.run(
       `DELETE FROM thread_spawn_edges WHERE parent_thread_id IN (${placeholders}) ` +
       `OR child_thread_id IN (${placeholders})`,
@@ -346,38 +346,13 @@ function deleteCodexStateRows(db, threadIds) {
   return db.export();
 }
 
-function deleteCodexHistoryRows(db, threadIds) {
+function deleteCodexRowsByThreadId(db, threadIds) {
   if (!threadIds.length) return db.export();
   const placeholders = sqlPlaceholders(threadIds);
   db.run("BEGIN IMMEDIATE");
   try {
-    db.run(`DELETE FROM thread_items WHERE thread_id IN (${placeholders})`, threadIds);
-    db.run(`DELETE FROM thread_turns WHERE thread_id IN (${placeholders})`, threadIds);
-    db.run(`DELETE FROM thread_history_projection_state WHERE thread_id IN (${placeholders})`, threadIds);
-    db.run("COMMIT");
-  } catch (error) {
-    db.run("ROLLBACK");
-    throw error;
-  }
-  return db.export();
-}
-
-function deleteCodexCatalogRows(db, threadIds) {
-  return deleteCodexRowsByThreadId(db, [
-    "automation_runs",
-    "inbox_items",
-    "thread_timeline_ledger",
-    "local_thread_catalog",
-  ], threadIds);
-}
-
-function deleteCodexRowsByThreadId(db, tables, threadIds) {
-  if (!threadIds.length) return db.export();
-  const placeholders = sqlPlaceholders(threadIds);
-  db.run("BEGIN IMMEDIATE");
-  try {
-    for (const table of tables) {
-      db.run(`DELETE FROM ${table} WHERE thread_id IN (${placeholders})`, threadIds);
+    for (const table of codexThreadIdTables(db)) {
+      db.run(`DELETE FROM ${quoteCodexIdentifier(table)} WHERE thread_id IN (${placeholders})`, threadIds);
     }
     db.run("COMMIT");
   } catch (error) {
@@ -385,6 +360,18 @@ function deleteCodexRowsByThreadId(db, tables, threadIds) {
     throw error;
   }
   return db.export();
+}
+
+function codexThreadIdTables(db) {
+  const tables = queryCodexRows(db,
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'");
+  return tables.map(({ name }) => name).filter((name) =>
+    queryCodexRows(db, `PRAGMA table_info(${quoteCodexIdentifier(name)})`)
+      .some((column) => column.name === "thread_id"));
+}
+
+function quoteCodexIdentifier(name) {
+  return `"${String(name).replaceAll('"', '""')}"`;
 }
 
 function buildCodexDatabaseUpdates(databaseFiles, snapshots, nextBytes) {
@@ -425,31 +412,49 @@ async function verifyCodexDatabaseDeletion(SQL, databaseFiles, threadIds) {
     if (countCodexRowsByIds(stateCheck, "threads", threadIds) !== 0) {
       throw new Error(`${databaseFiles.state.name} 仍包含待删除线程.`);
     }
+    verifyCodexThreadRows(stateCheck, databaseFiles.state.name, threadIds);
+    if (countCodexSpawnEdges(stateCheck, threadIds) !== 0) {
+      throw new Error(`${databaseFiles.state.name} 仍包含待删除线程的派生关系.`);
+    }
   } finally {
     stateCheck.close();
   }
 
-  const checks = [
-    ["history", ["thread_items", "thread_turns", "thread_history_projection_state"]],
-    ["catalog", ["automation_runs", "inbox_items", "thread_timeline_ledger", "local_thread_catalog"]],
-    ["historySnapshots", ["app_server_history_snapshots"]],
-    ["summaries", ["thread_turn_summaries"]],
-  ];
-  for (const [key, tables] of checks) {
+  for (const key of ["history", "catalog", "historySnapshots", "summaries"]) {
     const database = databaseFiles[key];
     if (!database) continue;
     const bytes = await readFileBytes(database.handle);
     const db = new SQL.Database(bytes);
     try {
       assertCodexIntegrity(db, database.name);
-      for (const table of tables) {
-        if (countCodexRowsByIds(db, table, threadIds) !== 0) {
-          throw new Error(`${database.path} 的 ${table} 仍包含待删除线程.`);
-        }
-      }
+      verifyCodexThreadRows(db, database.path, threadIds);
     } finally {
       db.close();
     }
+  }
+}
+
+function verifyCodexThreadRows(db, fileName, threadIds) {
+  for (const table of codexThreadIdTables(db)) {
+    if (countCodexRowsByIds(db, table, threadIds) !== 0) {
+      throw new Error(`${fileName} 的 ${table} 仍包含待删除线程.`);
+    }
+  }
+}
+
+function countCodexSpawnEdges(db, threadIds) {
+  if (!threadIds.length) return 0;
+  const placeholders = sqlPlaceholders(threadIds);
+  const statement = db.prepare(
+    `SELECT COUNT(*) AS count FROM thread_spawn_edges WHERE parent_thread_id IN (${placeholders}) ` +
+    `OR child_thread_id IN (${placeholders})`,
+  );
+  try {
+    statement.bind([...threadIds, ...threadIds]);
+    statement.step();
+    return Number(statement.getAsObject().count || 0);
+  } finally {
+    statement.free();
   }
 }
 
@@ -470,7 +475,8 @@ function countCodexRowsByIds(db, table, threadIds) {
   if (!threadIds.length) return 0;
   const column = table === "threads" ? "id" : "thread_id";
   const statement = db.prepare(
-    `SELECT COUNT(*) AS count FROM ${table} WHERE ${column} IN (${sqlPlaceholders(threadIds)})`,
+    `SELECT COUNT(*) AS count FROM ${quoteCodexIdentifier(table)} ` +
+    `WHERE ${column} IN (${sqlPlaceholders(threadIds)})`,
   );
   try {
     statement.bind(threadIds);

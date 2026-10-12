@@ -2,7 +2,7 @@
 
 ![preview](./preview.png)
 
-一个本地会话管理工具，用于浏览、检索、导出和清理 **Claude Code** 与 **Codex** 的历史会话记录，所有数据仅在浏览器本地处理，**不会上传到任何服务器或第三方**。
+一个本地会话管理工具，用于浏览、筛选、导出和清理 **Claude Code** 与 **Codex** 的历史会话记录，所有数据仅在浏览器本地处理，**不会上传到任何服务器或第三方**。
 
 ## 在线使用
 
@@ -77,7 +77,7 @@
 
 Claude 会话 ID 取自 `<会话-uuid>.jsonl` 文件名。
 
-Codex 会合并 `state_<版本>.sqlite` 的 `threads` 表、`sqlite/codex-dev.db` 的侧边栏目录、`session_index.jsonl` 和 `sessions/` 中的转录文件。消息和工具调用从转录的`response_item` 记录解析。
+Codex 会合并 `state_<版本>.sqlite` 的 `threads` 表、`sqlite/codex-dev.db` 的侧边栏目录、`session_index.jsonl` 和 `sessions/` 中的转录文件。读取数据库时会合并 WAL 中已提交的事务；消息和工具调用从转录的 `response_item` 记录解析。
 
 会话的「项目」分组：Claude 取自目录结构，Codex 取自会话文件首行 `session_meta` 中的 `cwd`（工作目录）。
 
@@ -87,7 +87,7 @@ Codex 会合并 `state_<版本>.sqlite` 的 `threads` 表、`sqlite/codex-dev.db
 - 已选择的 Claude / Codex 目录句柄保存在当前浏览器的本地数据库中，仅用于恢复下次目录选择的起始位置。
 - 通过浏览器原生的目录授权机制访问文件；目录句柄可以保存，但具体访问权限由浏览器管理，重新打开页面时可能需要再次授权。
 - Codex 数据库会先在浏览器内存中完成事务，再依次替换历史库和状态库；跨文件写入失败时会尝试使用内存中的原始字节回滚。数据库成功更新后才会清理索引和转录文件。
-- **删除操作不可撤销**：请自行确认对应客户端已经完全退出。Codex 删除会同时改写 `state_<版本>.sqlite` 和 `thread_history_<版本>.sqlite`；工具会验证 WAL 校验和，并按 SQLite 恢复规则把其中已提交但尚未回写的事务合并到内存数据库。正常退出后遗留的 WAL/SHM 会在数据库更新后移除。
+- **删除操作不可撤销**：请自行确认对应客户端已经完全退出。Codex 删除会同时改写 `state_<版本>.sqlite` 和 `thread_history_<版本>.sqlite`，并清理已识别数据库内按 `thread_id` 关联的记录；工具会验证 WAL 校验和，并按 SQLite 恢复规则把其中已提交但尚未回写的事务合并到内存数据库。正常退出后遗留的 WAL/SHM 会在数据库更新后移除。
 
 ## 项目结构
 

@@ -208,12 +208,12 @@ function extractCodexResponseItems(record) {
       body,
     )];
   }
-  if (payload.type === "custom_tool_call") {
+  if (payload.type === "custom_tool_call" || payload.type === "function_call") {
     const body = summarizeCodexToolInvocation(payload);
     return body ? [mkItem("system", "toolCall", "工具调用", timestamp, body)] : [];
   }
-  if (payload.type === "custom_tool_call_output") {
-    const output = typeof payload.output === "string" ? payload.output.trim() : "";
+  if (payload.type === "custom_tool_call_output" || payload.type === "function_call_output") {
+    const output = extractCodexToolOutput(payload.output);
     return output
       ? [mkItem("system", "toolOutput", "工具输出", timestamp, truncateText(output, TOOL_LIMIT))]
       : [];
@@ -227,6 +227,14 @@ function extractCodexMessageContent(content) {
 
 function summarizeCodexToolInvocation(payload) {
   const name = payload.name || "工具调用";
-  const input = typeof payload.input === "string" ? payload.input.trim() : "";
+  const value = payload.type === "function_call" ? payload.arguments : payload.input;
+  const input = typeof value === "string" ? value.trim() : "";
   return input ? `${name}\n${truncateText(input, TOOL_LIMIT)}` : name;
+}
+
+function extractCodexToolOutput(output) {
+  if (typeof output === "string") return output.trim();
+  if (!Array.isArray(output)) return "";
+  return output.map((item) => item?.type === "input_text" && typeof item.text === "string"
+    ? item.text.trim() : "").filter(Boolean).join("\n");
 }
