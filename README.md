@@ -8,7 +8,7 @@
 
 ## 在线使用
 
-用 Chrome / Edge 打开 [本地会话管理工具](https://www.kafuucoori.top/wp-content/uploads/session/app.html)。
+用 Chrome / Edge 打开 [本地会话管理工具](https://www.kafuucoori.top/session/app.html)。
 
 也可以下载完整仓库，直接用 Chrome / Edge 打开 `app.html`。请保留同目录中的脚本和样式文件。
 
